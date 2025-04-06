@@ -40,73 +40,96 @@ const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const logOut = async () => {
+    if (!token) return;
+    console.log("[auth] 🚪 Logging out...");
     try {
-      await api.post("/api/logout");
+      await api.post("/logout");
+    } catch {
+      console.warn("[auth] ⚠️ Logout request failed");
+    } finally {
       setUser(null);
       setToken(null);
       setIsLoggedIn(false);
-    } catch (err) {
-      console.log("Wylogowywanie nieudane");
     }
   };
+  
 
   useEffect(() => {
     const fetchMe = async () => {
+      console.log("[auth] 🔄 Fetching /me...");
       try {
-        const response = await api.get("/api/me");
+        const response = await api.get("/me");
+        console.log("[auth] ✅ /me success:", response.data);
+  
         setToken(response.data.token);
         setUser(response.data.User);
         setIsLoggedIn(true);
-      } catch {
+      } catch (err) {
+        console.warn("[auth] ❌ /me failed – calling logOut()");
         logOut();
       }
     };
     fetchMe();
   }, []);
+  
 
   useLayoutEffect(() => {
     const authInterceptor = api.interceptors.request.use((config) => {
       const cfg = config as CustomAxiosRequestConfig;
-      cfg.headers.Authorization =
-        !cfg._retry && token ? `Bearer ${token}` : cfg.headers.Authorization;
+  
+      if (!cfg._retry && token) {
+        cfg.headers.Authorization = `Bearer ${token}`;
+        console.log(`[auth] 📨 Added Authorization header to ${cfg.url}`);
+      }
+  
       return cfg;
     });
-
+  
     return () => {
       api.interceptors.request.eject(authInterceptor);
     };
   }, [token]);
+  
 
   useLayoutEffect(() => {
     const refreshInterceptor = api.interceptors.response.use(
       (response) => response,
       async (error) => {
-        const originalRequest = error.config;
+        const originalRequest = error.config as CustomAxiosRequestConfig;
+  
         if (
           error.response.status === 403 &&
-          error.response.data.message == "Unauthorized"
+          error.response.data.message === "Unauthorized" &&
+          !originalRequest._retry &&
+          originalRequest.url !== "/refreshToken"
         ) {
+          console.warn("[auth] 🔁 Got 403 – trying refreshToken...");
+  
           try {
-            const response = await api.get("/api/refreshToken");
+            const response = await api.get("/refreshToken");
+            console.log("[auth] ✅ /refreshToken success");
+  
             setToken(response.data.accessToken);
-
             originalRequest.headers.Authorization = `Bearer ${response.data.accessToken}`;
             originalRequest._retry = true;
-
+  
             return api(originalRequest);
-          } catch {
+          } catch (err) {
+            console.warn("[auth] ❌ /refreshToken failed – logging out");
             logOut();
+            return Promise.reject(err);
           }
         }
-
+  
         return Promise.reject(error);
       }
     );
-
+  
     return () => {
       api.interceptors.response.eject(refreshInterceptor);
     };
   }, []);
+  
 
   return (
     <AuthContext.Provider value={{ token, isLoggedIn, user, logOut, setUser, setToken, setIsLoggedIn }}>

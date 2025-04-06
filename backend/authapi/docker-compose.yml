@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: auth-postgres
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: haslo123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: auth-backend
+    depends_on:
+      - postgres
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/authdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: haslo123
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
